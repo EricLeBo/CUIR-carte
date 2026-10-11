@@ -39,7 +39,11 @@ SECTEURS_COULEURS = [
 ]
 TRANSPARENCE_SECTEUR = 0.15   # 0 = invisible, 1 = opaque
 
+LEGENDE_TAILLE_MIN = 6
+LEGENDE_TAILLE_MAX = 20   # diamètre max de la bulle dans la légende, en pixels
+
 SORTIE = Path("index.html")       # sauvegarde de la carte en html
+
 
 # ------------------------------
 
@@ -156,6 +160,15 @@ def dessiner_secteurs(fig):
             font=dict(size=14, color=f"rgb({r},{g},{b})"),
         )
 
+
+def bulles_legende(df, top):
+    """Taille (diamètre en px) de la bulle de légende de chaque alliance, proportionnelle à son terrain total."""
+    totaux = df[df["groupe"].isin(top)].groupby("groupe")["terrain"].sum()
+    max_total = max(totaux.max(), 1) if len(totaux) else 1
+    return {tag: max(LEGENDE_TAILLE_MIN, LEGENDE_TAILLE_MAX * (totaux.get(tag, 0) / max_total) ** 0.5)
+            for tag in top}
+
+
 def creer_carte(df, top):
     # Couleurs : une par alliance du top, gris pour les autres
     palette = pc.qualitative.Dark24
@@ -173,29 +186,49 @@ def creer_carte(df, top):
 
     # Couche 1 : les ronds, une trace par groupe (pour la légende), avec survol
     groupes = [g for g in top + ["Autres", "Sans alliance"] if g in set(df["groupe"])]
+
+    tailles_legende = bulles_legende(df, top)
+
     for groupe in groupes:
         sub = df[df["groupe"] == groupe]
+        visible = True if groupe == MON_TAG else "legendonly"       # affiche par défaut que notre ally
+
+        # Entrée de légende : un point hors carte, avec la taille de l'alliance
         fig.add_trace(go.Scatter(
-            x=sub["x"],
-            y=sub["y"],
-            mode="markers",
-            name=groupe,
-            marker=dict(size=sub["diametre"], color=couleurs[groupe],
-                        symbol = sub["symbole"],
-                        opacity=0.7, line=dict(width=0)),
-            customdata=sub[["pseudo", "alliance", "terrain", "score_batiments",
-                            "score_technologies", "score_trophees", "coord"]].to_numpy(),
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "%{customdata[6]}<br>"
-                "Alliance : %{customdata[1]}<br>"
-                "Terrain : %{customdata[2]:,}<br>"
-                "Bâtiments : %{customdata[3]}<br>"
-                "Technologies : %{customdata[4]}<br>"
-                "Trophées : %{customdata[5]}"
-                "<extra></extra>"
-            ),
+            x=[-1000], y=[-1000], mode="markers", name=groupe,
+            marker=dict(symbol="circle",
+                        size=tailles_legende.get(groupe, 10),
+                        color=couleurs[groupe], opacity=0.7),
+            legendgroup=groupe, showlegend=True, hoverinfo="skip",
+            visible=visible,                # montre la cuir par défaut
         ))
+
+        # Points réels, une trace par forme, cachés de la légende mais rattachés au même groupe
+        for forme in sub["symbole"].unique():
+            s2 = sub[sub["symbole"] == forme]
+            fig.add_trace(go.Scatter(
+                x=s2["x"],
+                y=s2["y"],
+                mode="markers",
+                name=groupe,
+                legendgroup=groupe,
+                visible=visible,            # montre la cuir par défaut
+                showlegend=False,
+                marker=dict(size=s2["diametre"], color=couleurs[groupe],
+                            symbol=forme, opacity=0.7, line=dict(width=0)),
+                customdata=s2[["pseudo", "alliance", "terrain", "score_batiments",
+                               "score_technologies", "score_trophees", "coord"]].to_numpy(),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "%{customdata[6]}<br>"
+                    "Alliance : %{customdata[1]}<br>"
+                    "Terrain : %{customdata[2]:,}<br>"
+                    "Bâtiments : %{customdata[3]}<br>"
+                    "Technologies : %{customdata[4]}<br>"
+                    "Trophées : %{customdata[5]}"
+                    "<extra></extra>"
+                ),
+            ))
 
     # Couche 2 : pseudos de mon alliance uniquement, au-dessus à droite du rond
     membres = df[df["alliance"] == MON_TAG]
@@ -222,13 +255,13 @@ def creer_carte(df, top):
     dessiner_secteurs(fig)
 
     fig.update_layout(
-        title="Carte du royaume (S5)",
+        title="Carte du royaume S5",
         height=900,
         hovermode="closest",
         plot_bgcolor="white",
         legend_title_text="Alliance",
         xaxis=dict(title="X", range=[-10, 105], autorange=False, constrain="domain"),
-        yaxis=dict(title="Y", autorange=True),
+        yaxis=dict(title="Y", range=[df["y"].min() - 5, df["y"].max() + 5], autorange=False),
     )
     fig.update_yaxes(scaleanchor="x", scaleratio=1)
     return fig
