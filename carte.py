@@ -175,6 +175,55 @@ def bulles_legende(df, top):
 #     return {a["tag"]: a["name"] for a in alliances}
 
 
+import math
+
+def tracer_colonies(fig, joueurs, top):
+    """Trace une flèche colonisé -> maître, rattachée à la légende de l'alliance du maître."""
+    par_id = {j["id"]: j for j in joueurs}
+    LONGUEUR_POINTE = 1.2                   # taille de la pointe, en unités de la carte
+    ANGLE_POINTE = math.radians(28)         # ouverture de la pointe
+
+    def groupe_de(j):
+        if j["alliance"] is None:
+            return "Sans alliance"
+        return j["alliance"] if j["alliance"] in top else "Autres"
+
+    segments = {}  # groupe -> ([xs], [ys])
+    for j in joueurs:
+        m = j.get("masterPlayerId")
+        if m is None or m not in par_id:
+            continue
+        maitre = par_id[m]
+        dx, dy = maitre["x"] - j["x"], maitre["y"] - j["y"]
+        longueur = math.hypot(dx, dy)
+        if longueur == 0:
+            continue
+        ux, uy = dx / longueur, dy / longueur   # direction colonisé -> maître
+
+        xs, ys = segments.setdefault(groupe_de(maitre), ([], []))
+        tx, ty = maitre["x"], maitre["y"]       # pointe de la flèche, sur le maître
+
+        # Corps de la flèche : du colonisé vers le maître
+        xs += [j["x"], tx, None]
+        ys += [j["y"], ty, None]
+
+        # Deux ailes de la pointe, de part et d'autre de la direction
+        for signe in (1, -1):
+            a = signe * ANGLE_POINTE
+            rx = ux * math.cos(a) - uy * math.sin(a)
+            ry = ux * math.sin(a) + uy * math.cos(a)
+            xs += [tx - LONGUEUR_POINTE * rx, tx, None]
+            ys += [ty - LONGUEUR_POINTE * ry, ty, None]
+
+    for groupe, (xs, ys) in segments.items():
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines",
+            line=dict(color="rgba(80,80,80,0.5)", width=1),
+            legendgroup=groupe, showlegend=False, hoverinfo="skip",
+            visible=True if groupe == MON_TAG else "legendonly",
+        ))
+
+
 def creer_carte(df, top):
     # Couleurs : une par alliance du top, gris pour les autres
     palette = pc.qualitative.Dark24
@@ -278,12 +327,19 @@ def creer_carte(df, top):
 
     fig.update_layout(
         title="Carte du royaume S5",
-        height=900,
+        # height=1000,
         hovermode="closest",
         plot_bgcolor="white",
         legend_title_text="Alliance",
+        legend=dict(
+            x=1.02,          # à droite de la carte
+            xanchor="left",
+            y=1,             # tout en haut
+            yanchor="top",
+        ),
         xaxis=dict(title="X", range=[-10, 105], autorange=False, constrain="domain"),
         yaxis=dict(title="Y", range=[df["y"].min() - 5, df["y"].max() + 5], autorange=False),
+        # yaxis=dict(title="Y", autorange=True),
     )
     fig.update_yaxes(scaleanchor="x", scaleratio=1)
     return fig
@@ -310,6 +366,7 @@ def main():
     afficher_sans_role(df)
     # noms = charger_noms_alliances()
     fig = creer_carte(df, top)
+    tracer_colonies(fig, joueurs, top)
 
     fig.write_html(SORTIE, include_plotlyjs=True)
     print(f"Carte générée : {SORTIE.resolve()}")
