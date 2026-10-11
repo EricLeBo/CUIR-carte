@@ -12,7 +12,7 @@ import os           # pour sauver la carte en html
 
 # ---------- Réglages ----------
 BASE = "https://s5.fourmizzz.fr/api/exports"   # serveur S5 (HTTPS)
-TOP_N = 15                                       # nombre d'alliances avec leur propre couleur
+TOP_N = 20                                       # nombre d'alliances avec leur propre couleur
 MON_TAG = "CUIR"                  # tag de ton alliance : pseudos affichés sur la carte
 TAILLE_MAX = 30                                  # diamètre du plus gros rond, en pixels
 CACHE_DIR = Path("cache")
@@ -169,6 +169,12 @@ def bulles_legende(df, top):
             for tag in top}
 
 
+# def charger_noms_alliances():
+#     """Renvoie un dictionnaire tag -> nom complet, depuis le fichier des alliances."""
+#     alliances = get_json(f"{BASE}/alliances/")
+#     return {a["tag"]: a["name"] for a in alliances}
+
+
 def creer_carte(df, top):
     # Couleurs : une par alliance du top, gris pour les autres
     palette = pc.qualitative.Dark24
@@ -179,13 +185,30 @@ def creer_carte(df, top):
     # Diamètre proportionnel à la racine du terrain, donc surface proportionnelle au terrain
     max_terrain = max(df["terrain"].max(), 1)
     df = df.copy()
+
+
+    totaux = df.groupby("groupe")["terrain"].sum()
+    nb_membres = df.groupby("groupe").size()
+
+    def formater(n):
+        return f"{int(n):,}".replace(",", " ")
+
+    def libelle_legende(groupe):
+        if groupe in ("Autres", "Sans alliance"):
+            return groupe
+        return (f"{groupe} · {formater(nb_membres[groupe])} · "
+                f"{formater(totaux[groupe])} cm2")
+    # fin de la légende
+
+    
     df["coord"] = df.apply(lambda r: f"({r['x']}, {r['y']})", axis=1)
     df["diametre"] = (TAILLE_MAX * (df["terrain"] / max_terrain) ** 0.5).clip(lower=3)
 
     fig = go.Figure()
 
     # Couche 1 : les ronds, une trace par groupe (pour la légende), avec survol
-    groupes = [g for g in top + ["Autres", "Sans alliance"] if g in set(df["groupe"])]
+    top_trie = sorted(top, key=lambda t: totaux.get(t, 0), reverse=True)
+    groupes = [g for g in top_trie + ["Autres", "Sans alliance"] if g in set(df["groupe"])]
 
     tailles_legende = bulles_legende(df, top)
 
@@ -195,7 +218,7 @@ def creer_carte(df, top):
 
         # Entrée de légende : un point hors carte, avec la taille de l'alliance
         fig.add_trace(go.Scatter(
-            x=[-1000], y=[-1000], mode="markers", name=groupe,
+            x=[-1000], y=[-1000], mode="markers", name=libelle_legende(groupe),
             marker=dict(symbol="circle",
                         size=tailles_legende.get(groupe, 10),
                         color=couleurs[groupe], opacity=0.7),
@@ -220,9 +243,8 @@ def creer_carte(df, top):
                                "score_technologies", "score_trophees", "coord"]].to_numpy(),
                 hovertemplate=(
                     "<b>%{customdata[0]}</b><br>"
-                    "%{customdata[6]}<br>"
-                    "Alliance : %{customdata[1]}<br>"
-                    "Terrain : %{customdata[2]:,}<br>"
+                    "%{customdata[1]} %{customdata[6]}<br>"
+                    "%{customdata[2]:,} cm2<br>"
                     "Bâtiments : %{customdata[3]}<br>"
                     "Technologies : %{customdata[4]}<br>"
                     "Trophées : %{customdata[5]}"
@@ -286,6 +308,7 @@ def main():
     df, top = preparer_donnees(joueurs)
     df = ajouter_roles(df)
     afficher_sans_role(df)
+    # noms = charger_noms_alliances()
     fig = creer_carte(df, top)
 
     fig.write_html(SORTIE, include_plotlyjs=True)
