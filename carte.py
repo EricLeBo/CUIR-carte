@@ -39,7 +39,7 @@ SECTEURS_COULEURS = [
 ]
 TRANSPARENCE_SECTEUR = 0.15   # 0 = invisible, 1 = opaque
 
-SORTIE = Path("carte/index.html")       # sauvegarde de la carte en html
+SORTIE = Path("index.html")       # sauvegarde de la carte en html
 
 # ------------------------------
 
