@@ -1,0 +1,31 @@
+name: Mise à jour de la carte
+
+on:
+  schedule:
+    - cron: "5 * * * *"      # toutes les heures, à la 5e minute
+  workflow_dispatch:          # permet de lancer la mise à jour à la main
+
+permissions:
+  contents: write
+
+jobs:
+  maj:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - run: python carte.py
+
+      - name: Enregistrer la carte
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add index.html
+          git diff --staged --quiet || git commit -m "Mise à jour de la carte"
+          git push
